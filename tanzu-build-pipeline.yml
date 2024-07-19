@@ -1,0 +1,47 @@
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - name: ServiceConnection
+    value: tanzucontainers.azurecr.io
+  - name: ContainerRegistry
+    value: tanzucontainers.azurecr.io/build/python
+
+steps:
+  - checkout: self
+    persistCredentials: true
+  - task: Docker@2
+    displayName: Login to Container Registry
+    inputs:
+      command: login
+      containerRegistry: $(ServiceConnection)
+
+  - task: CmdLine@2
+    displayName: Set up SDK
+    inputs:
+      script: |
+        curl -s "https://get.sdkman.io" | bash
+        sdk install java 21.0.3-graal
+        sdk use java 21.0.3-graal
+        sdk install maven
+        sdk env init
+        
+        (curl -sSL "https://github.com/buildpacks/pack/releases/download/v0.35.0/pack-v0.35.0-linux.tgz" | sudo tar -C /usr/local/bin/ --no-same-owner -xzv pack)
+
+  - task: CmdLine@2
+    displayName: Build native image
+    inputs:
+      script: |
+        pack build buildpackify \
+          --builder paketobuildpacks/builder-jammy-base \
+          --buildpack paketo-buildpacks/syft \
+          --buildpack paketo-buildpacks/graalvm \
+          --buildpack paketo-buildpacks/java \
+          --buildpack paketo-buildpacks/maven \
+          --env BP_MAVEN_ACTIVE_PROFILES=native \
+          --env BP_MAVEN_BUILT_ARTIFACT=target/buildpackify-1.0-SNAPSHOT.zip \
+          --env BP_NATIVE_IMAGE=true \
+          --env MVN=/layers/paketo-buildpacks_maven/maven/bin/mvn
